@@ -1,0 +1,38 @@
+.gradle
+build
+.idea/
+.project
+.settings/
+.classpath
+nbactions.xml
+nb-configuration.xml
+nbproject/
+out/
+.tmp/
+*.class
+
+# Additional IDE and local tooling files
+*.iml
+*.ipr
+*.iws
+.vscode/
+.codex/
+.agents/
+AGENTS.md
+CLAUDE.md
+
+# Runtime logs, crash dumps, and local credentials
+*.log
+hs_err_pid*
+replay_pid*
+*.hprof
+.runelite/
+credentials.properties
+.env
+.env.*
+!.env.example
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
