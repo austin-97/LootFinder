@@ -9,6 +9,13 @@ import net.runelite.client.config.Range;
 public interface LootFinderConfig extends Config
 {
     String GROUP = "loot-finder";
+
+    @ConfigItem(keyName = "menuLocation", name = "Menu location", description = "Use a separate icon or use existing bank buttons with a right click")
+    default LootMenuLocation menuLocation()
+    {
+        return LootMenuLocation.SEPARATE_ICON;
+    }
+
     // Retain the stored key so existing favorites remain saved.
     @ConfigItem(keyName = "favoriteNpcs", name = "Favorite loot sources", description = "Examples: Corrupted Hunllef, Seed pack")
     default String favoriteSources()

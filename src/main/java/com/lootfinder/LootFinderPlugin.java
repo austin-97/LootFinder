@@ -6,6 +6,8 @@ import java.util.UUID;
 import java.util.List;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.MenuAction;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.ScriptID;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.ScriptPostFired;
@@ -29,6 +31,7 @@ import net.runelite.client.plugins.banktags.BankTagsPlugin;
 import net.runelite.client.plugins.banktags.BankTagsConfig;
 import net.runelite.client.plugins.banktags.BankTagsService;
 import net.runelite.client.plugins.banktags.TagManager;
+import net.runelite.client.plugins.loottracker.LootReceived;
 import net.runelite.client.util.Text;
 
 @PluginDescriptor(name = "Loot Finder", description = "Filter loot in your bank from the Loot Tracker plugin", tags = {"bank", "loot", "tags"})
@@ -80,6 +83,7 @@ public class LootFinderPlugin extends Plugin
 			clear();
 			unregister();
 			button.shutDown();
+			repository.clearLive();
 		});
 	}
 
@@ -88,7 +92,7 @@ public class LootFinderPlugin extends Plugin
 		if (!running || client.getGameState() != GameState.LOGGED_IN) return;
 		List<LootSource> all = repository.recent(Integer.MAX_VALUE);
 		List<LootSource> recent = all.subList(0, Math.min(all.size(), Math.max(1, Math.min(20, config.recentSources()))));
-		button.show(recent, LootTrackerRepository.favorites(all, config.favoriteSources()), source ->
+		button.show(config.menuLocation(), recent, LootTrackerRepository.favorites(all, config.favoriteSources()), source ->
 		{
 			if (!running) return;
 			tag.select(source);
@@ -129,7 +133,9 @@ public class LootFinderPlugin extends Plugin
 	private void openSelectedLootFilter()
 	{
 		if (!running || selectedSourceName == null || !registered) return;
-		bankTags.openBankTag(tagName, BankTagsService.OPTION_NO_LAYOUT | BankTagsService.OPTION_HIDE_TAG_NAME);
+		// Allow normal bank dragging while keeping the filter in the bank's actual order.
+		bankTags.openBankTag(tagName, BankTagsService.OPTION_NO_LAYOUT
+			| BankTagsService.OPTION_HIDE_TAG_NAME | BankTagsService.OPTION_ALLOW_MODIFICATIONS);
 		// Keep the selection in memory without saving a session-only tag in Bank Tags.
 		forgetLootTab();
 	}
@@ -258,19 +264,63 @@ public class LootFinderPlugin extends Plugin
 	@Subscribe
 	public void onMenuOpened(MenuOpened event)
 	{
-		if (running) button.onMenuOpened(event);
+		if (!running) return;
+		button.onMenuOpened(event);
+		if (tagName.equals(bankTags.getActiveTag()))
+		{
+			// Bank Tags couples dragging with tag-edit actions. Loot membership is derived
+			// from recorded drops, so removing a saved tag would have no effect here.
+			for (MenuEntry entry : client.getMenu().getMenuEntries())
+			{
+				if (entry.getType() == MenuAction.RUNELITE
+					&& entry.getParam1() == InterfaceID.Bankmain.ITEMS
+					&& "Remove-tag".equals(entry.getOption()))
+				{
+					client.getMenu().removeMenuEntry(entry);
+				}
+			}
+		}
 	}
 
 	@Subscribe
 	public void onProfileChanged(ProfileChanged event)
 	{
 		LootFinderConfigMigration.migrate(configManager::getConfiguration, configManager::setConfiguration);
-		clientThread.invokeLater(this::refresh);
+		clientThread.invokeLater(() ->
+		{
+			repository.clearLive();
+			refresh();
+		});
+	}
+
+	@Subscribe
+	public void onLootReceived(LootReceived event)
+	{
+		String profile = configManager.getRSProfileKey();
+		clientThread.invoke(() ->
+		{
+			if (!running || !java.util.Objects.equals(profile, configManager.getRSProfileKey())) return;
+			repository.record(profile, event);
+			// The next bank open reads these updates even when no bank UI exists yet.
+			Widget bank = client.getWidget(InterfaceID.Bankmain.UNIVERSE);
+			if (bank != null && !bank.isHidden()) refresh();
+		});
 	}
 
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
+		if ("loottracker".equals(event.getGroup()) && event.getKey().startsWith("drops_"))
+		{
+			clientThread.invokeLater(() ->
+			{
+				if (!running || !java.util.Objects.equals(event.getProfile(), configManager.getRSProfileKey())) return;
+				if (event.getNewValue() == null) repository.removeLive(event.getProfile(), event.getKey());
+				Widget bank = client.getWidget(InterfaceID.Bankmain.UNIVERSE);
+				if (bank != null && !bank.isHidden()) refresh();
+			});
+			return;
+		}
 		if (LootFinderConfig.GROUP.equals(event.getGroup())
 			|| ("loottracker".equals(event.getGroup()) && "ignoredEvents".equals(event.getKey())))
 		{
@@ -278,4 +328,3 @@ public class LootFinderPlugin extends Plugin
 		}
 	}
 }
-

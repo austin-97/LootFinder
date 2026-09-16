@@ -35,17 +35,39 @@ final class LootBankButton
 	private List<LootSource> favorites = java.util.Collections.emptyList();
 	private Consumer<LootSource> selection;
 	private BooleanSupplier canAddFavorite;
+	private LootMenuLocation location;
+	private Runnable clearFilter;
+	private Runnable addCurrentFavorite;
 
 	void loadImage()
 	{
 		image = ImageUtil.loadImageResource(LootTrackerPlugin.class, "panel_icon.png");
 	}
 
-	void show(List<LootSource> sources, List<LootSource> favoriteSources, Consumer<LootSource> select,
+	void show(LootMenuLocation location, List<LootSource> sources, List<LootSource> favoriteSources, Consumer<LootSource> select,
 		Runnable clear, BooleanSupplier canAddFavorite, Runnable addFavorite)
 	{
 		Widget bank = client.getWidget(InterfaceID.Bankmain.UNIVERSE);
 		if (bank == null || bank.isHidden()) return;
+		if (parent != bank) detach();
+		parent = bank;
+		this.location = location;
+		recents = List.copyOf(sources);
+		favorites = List.copyOf(favoriteSources);
+		selection = select;
+		this.canAddFavorite = canAddFavorite;
+		clearFilter = clear;
+		addCurrentFavorite = addFavorite;
+		if (location != LootMenuLocation.SEPARATE_ICON)
+		{
+			if (button != null)
+			{
+				button.clearActions();
+				button.setOnOpListener((Object[]) null);
+				button.setHidden(true);
+			}
+			return;
+		}
 		if (sprite == null)
 		{
 			sprite = ImageUtil.getImageSpritePixels(image, client);
@@ -54,10 +76,8 @@ final class LootBankButton
 			while (client.getSpriteOverrides().containsKey(spriteId)) spriteId--;
 			client.getSpriteOverrides().put(spriteId, sprite);
 		}
-		if (parent != bank || button == null)
+		if (button == null)
 		{
-			detach();
-			parent = bank;
 			button = bank.createChild(-1, WidgetType.GRAPHIC);
 			button.setOriginalWidth(20);
 			button.setOriginalHeight(20);
@@ -67,10 +87,6 @@ final class LootBankButton
 			button.setHasListener(true);
 		}
 		button.setHidden(false);
-		recents = List.copyOf(sources);
-		favorites = List.copyOf(favoriteSources);
-		selection = select;
-		this.canAddFavorite = canAddFavorite;
 		button.setName("Loot Finder");
 		button.clearActions();
 		button.setAction(0, OPEN_MENU);
@@ -88,7 +104,7 @@ final class LootBankButton
 
 	void onMenuShouldLeftClick(MenuShouldLeftClick event)
 	{
-		if (button == null || button.isHidden()) return;
+		if (location != LootMenuLocation.SEPARATE_ICON || button == null || button.isHidden()) return;
 		MenuEntry[] entries = client.getMenu().getMenuEntries();
 		if (entries.length > 0 && entries[entries.length - 1].getWidget() == button)
 		{
@@ -98,6 +114,22 @@ final class LootBankButton
 
 	void onMenuOpened(MenuOpened event)
 	{
+		if (!isBankOpen()) return;
+		if (location == LootMenuLocation.BANK_SETTINGS || location == LootMenuLocation.BANK_HELP)
+		{
+			Widget menuButton = client.getWidget(location == LootMenuLocation.BANK_HELP
+				? InterfaceID.Bankmain.BANK_TUT : InterfaceID.Bankmain.MENU_BUTTON);
+			if (menuButton == null || menuButton.isHidden()) return;
+			for (MenuEntry entry : event.getMenuEntries())
+			{
+				if (entry.getWidget() == menuButton)
+				{
+					addBankButtonMenus();
+					break;
+				}
+			}
+			return;
+		}
 		if (button == null || button.isHidden()) return;
 		List<MenuEntry> visibleEntries = new ArrayList<>();
 		boolean removedOpener = false;
@@ -122,6 +154,35 @@ final class LootBankButton
 		}
 	}
 
+	private boolean isBankOpen()
+	{
+		return parent != null && !parent.isHidden()
+			&& client.getWidget(InterfaceID.Bankmain.UNIVERSE) == parent;
+	}
+
+	private void addBankButtonMenus()
+	{
+		Menu menu = client.getMenu();
+		// Only add client-side menu entries; leave the bank widget and its actions intact.
+		// The last entry is displayed first, so add our actions in reverse display order.
+		if (canAddFavorite != null && canAddFavorite.getAsBoolean())
+		{
+			menu.createMenuEntry(-1).setOption(ADD_FAVORITE).setTarget("Loot Finder")
+				.setType(MenuAction.RUNELITE).onClick(entry ->
+				{
+					if (isBankOpen() && canAddFavorite != null && canAddFavorite.getAsBoolean()
+						&& addCurrentFavorite != null) addCurrentFavorite.run();
+				});
+		}
+		menu.createMenuEntry(-1).setOption("Clear loot filter").setTarget("Loot Finder")
+			.setType(MenuAction.RUNELITE).onClick(entry ->
+			{
+				if (isBankOpen() && clearFilter != null) clearFilter.run();
+			});
+		populate(menu.createMenuEntry(-1).setOption("Favorites"), favorites, "No matching favorites — configure source names");
+		populate(menu.createMenuEntry(-1).setOption("Recents"), recents, "No recorded loot");
+	}
+
 	private void populate(MenuEntry entry, List<LootSource> sources, String emptyMessage)
 	{
 		String section = entry.getOption();
@@ -144,7 +205,7 @@ final class LootBankButton
 				.setType(MenuAction.RUNELITE)
 				.onClick(clicked ->
 				{
-					if (button != null && !button.isHidden() && selection != null) selection.accept(source);
+					if (isBankOpen() && selection != null) selection.accept(source);
 				});
 
 		}
@@ -164,6 +225,9 @@ final class LootBankButton
 		favorites = java.util.Collections.emptyList();
 		selection = null;
 		canAddFavorite = null;
+		clearFilter = null;
+		addCurrentFavorite = null;
+		location = null;
 	}
 
 	void shutDown()

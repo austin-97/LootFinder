@@ -20,6 +20,7 @@ out/
 .agents/
 AGENTS.md
 CLAUDE.md
+todo.md
 
 # Runtime logs, crash dumps, and local credentials
 *.log
