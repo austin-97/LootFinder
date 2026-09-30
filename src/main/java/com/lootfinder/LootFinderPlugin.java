@@ -49,7 +49,6 @@ public class LootFinderPlugin extends Plugin
 	@Inject private LootBankButton button;
 	@Inject private TagManager tagManager;
 	@Inject private BankTagsService bankTags;
-	@Inject private BankTagsConfig bankTagsConfig;
 	private boolean running;
 	private boolean registered;
 	private String selectedSourceName;
@@ -147,6 +146,8 @@ public class LootFinderPlugin extends Plugin
 
 	private void forgetLootTab()
 	{
+		// Dependency plugins expose services, not their private config bindings.
+		BankTagsConfig bankTagsConfig = configManager.getConfig(BankTagsConfig.class);
 		if (isLootTab(bankTagsConfig.tab())) bankTagsConfig.tab("");
 	}
 
